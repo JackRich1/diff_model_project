@@ -119,6 +119,42 @@ class FlatBottomPotential(Potential):
 
         return energy, dEnergy
         
+class HarmonicPotential(Potential):
+    def compute_function(self, value, k, v_eq, compute_derivative=False):
+        energy = 0.5 * k * (value - v_eq) ** 2
+        if not compute_derivative:
+            return energy
+
+        dEnergy = k * (value - v_eq)
+        return energy, dEnergy
+
+class HuberPotential(Potential):
+    def compute_function(self, value, k, v_eq, delta, compute_derivative=False):
+        diffs = value - v_eq
+        energy = k * torch.where(
+            torch.abs(diffs) < delta,
+            0.5 * diffs ** 2,
+            delta * (torch.abs(diffs) - 0.5 * delta)
+        )
+        if not compute_derivative:
+            return energy
+
+        dEnergy = k * torch.where(
+            torch.abs(diffs) < delta,
+            diffs,
+            delta * torch.sign(diffs)
+        )
+        return energy, dEnergy
+
+class PeriodicPotential(Potential):
+    def compute_function(self, value, k, n, phase, compute_derivative=False):
+        energy = (k * (1 + torch.cos(n * value - phase)))
+        if not compute_derivative:
+            return energy
+        
+        dEnergy = -1 * k * n * torch.sin(n * value - phase)
+        return energy, dEnergy
+
 class DistancePotential(Potential):
     def compute_variable(self, coords, index, compute_gradient=False):
         r_ij = coords.index_select(-2, index[0]) -  coords.index_select(-2, index[1])
@@ -133,6 +169,30 @@ class DistancePotential(Potential):
         grad = torch.stack((grad_i, grad_j), dim=1)
 
         return r_ij_norm, grad
+
+class AnglePotential(Potential):
+    def compute_variable(self, coords, index, compute_gradient=False):
+        r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
+        r_ij_norm = torch.linalg.norm(r_ij, axis=-1)
+        r_hat_ij = r_ij / r_ij_norm.unsqueeze(-1)
+
+        r_kj = coords.index_select(-2, index[2]) - coords.index_select(-2, index[1])        
+        r_kj_norm = torch.linalg.norm(r_kj, axis=-1)
+        r_hat_kj = r_kj / r_kj_norm.unsqueeze(-1)
+        
+        cos_theta = (r_hat_ij.unsqueeze(-2) @ r_hat_kj.unsqueeze(-1)).squeeze(-1, -2)
+        theta = torch.arccos(cos_theta)
+
+        if not compute_gradient:
+            return theta
+
+        dtheta = torch.sqrt(1 - (cos_theta ** 2)).unsqueeze(-1)
+        grad_i = dtheta * (r_hat_ij * cos_theta.unsqueeze(-1) - r_hat_kj) / r_ij_norm.unsqueeze(-1)
+        grad_k = dtheta * (r_hat_kj * cos_theta.unsqueeze(-1) - r_hat_ij) / r_kj_norm.unsqueeze(-1)
+        grad_j = -1 * dtheta * (grad_i + grad_k)
+        grad = torch.stack((grad_i, grad_j, grad_k), dim=1)
+
+        return theta, grad
 
 class DihedralPotential(Potential):
     def compute_variable(self, coords, index, compute_gradient=False):
@@ -314,74 +374,130 @@ class PlanarBondPotential(FlatBottomPotential, AbsDihedralPotential):
 
         return improper_index, (k, lower_bounds, upper_bounds), None
 
+class AmberBondPotential(HuberPotential, DistancePotential):
+    def compute_args(self, feats, parameters):
+        index = feats['amber_bond_index'][0]
+        k = 2 * feats['amber_bond_k'][0]
+        # k = torch.ones_like(k)
+        r_eq = feats['amber_bond_r_eq'][0]
+        delta = torch.full_like(k, parameters['delta'])
+
+        return index, (k, r_eq, delta), None
+
+
+class AmberAnglePotential(HuberPotential, AnglePotential):
+    def compute_args(self, feats, parameters):
+        index = feats['amber_angle_index'][0]
+        k = 2 * feats['amber_angle_k'][0]
+        # k = torch.ones_like(k)
+        theta_eq = feats['amber_angle_theta_eq'][0] * torch.pi / 180
+        delta = torch.full_like(k, parameters['delta'])
+
+        return index, (k, theta_eq, delta), None
+
+class AmberTorsionPotential(PeriodicPotential, DihedralPotential):
+    def compute_args(self, feats, parameters):
+        index = feats['amber_torsion_index'][0]
+        k = feats['amber_torsion_k'][0]
+        # k = torch.ones_like(k)
+        n = feats['amber_torsion_n'][0]
+        phi = feats['amber_torsion_phi'][0] * torch.pi / 180
+        return index, (k, n, phi), None
+
 def get_potentials():
     potentials = [
-        SymmetricChainCOMPotential(
+        # SymmetricChainCOMPotential(
+        #     parameters={
+        #         'guidance_interval': 4,
+        #         'guidance_weight': 0.5,
+        #         'resampling_weight': 0.5,
+        #         'buffer': ExponentialInterpolation(
+        #             start=1.0,
+        #             end=5.0,
+        #             alpha=-2.0
+        #         )
+        #     }
+        # ),
+        # VDWOverlapPotential(
+        #     parameters={
+        #         'guidance_interval': 5,
+        #         'guidance_weight': PiecewiseStepFunction(
+        #             thresholds=[0.4],
+        #             values=[0.125, 0.0]
+        #         ),
+        #         'resampling_weight': PiecewiseStepFunction(
+        #             thresholds=[0.6],
+        #             values=[0.01, 0.0]
+        #         ),
+        #         'buffer': 0.225,
+        #     }
+        # ),
+        # ConnectionsPotential(
+        #     parameters={
+        #         'guidance_interval': 1,
+        #         'guidance_weight': 0.15,
+        #         'resampling_weight': 1.0,
+        #         'buffer': 2.0,
+        #     }
+        # ),
+        # PoseBustersPotential(
+        #     parameters={
+        #         'guidance_interval': 1,
+        #         'guidance_weight': 0.05,
+        #         'resampling_weight': 0.1,
+        #         'bond_buffer': 0.20,
+        #         'angle_buffer': 0.20,
+        #         'clash_buffer': 0.15
+        #     }
+        # ),
+        # ChiralAtomPotential(
+        #     parameters={
+        #         'guidance_interval': 1,
+        #         'guidance_weight': 0.10,
+        #         'resampling_weight': 1.0,
+        #         'buffer': 0.52360
+        #     }
+        # ),
+        # StereoBondPotential(
+        #     parameters={
+        #         'guidance_interval': 1,
+        #         'guidance_weight': 0.05,
+        #         'resampling_weight': 1.0,
+        #         'buffer': 0.52360
+        #     }
+        # ),
+        # PlanarBondPotential(
+        #     parameters={
+        #         'guidance_interval': 1,
+        #         'guidance_weight': 0.05,
+        #         'resampling_weight': 1.0,
+        #         'buffer': 0.26180
+        #     }
+        # ),
+        AmberBondPotential(
             parameters={
-                'guidance_interval': 4,
-                'guidance_weight': 0.5,
-                'resampling_weight': 0.5,
-                'buffer': ExponentialInterpolation(
-                    start=1.0,
-                    end=5.0,
-                    alpha=-2.0
-                )
+                'guidance_interval': 1,
+                'guidance_weight': 0.0001,
+                'resampling_weight': 0.001,
+                'delta': 0.2
             }
         ),
-        VDWOverlapPotential(
+        AmberAnglePotential(
             parameters={
-                'guidance_interval': 5,
+                'guidance_interval': 1,
+                'guidance_weight': 0.0001,
+                'resampling_weight': 0.001,
+                'delta': 0.0872665
+            }
+        ),
+        AmberTorsionPotential(
+            parameters={
+                'guidance_interval': 1,
                 'guidance_weight': PiecewiseStepFunction(
-                    thresholds=[0.4],
-                    values=[0.125, 0.0]
+                    thresholds=[0.25],
+                    values=[0.00, 0.0001]
                 ),
-                'resampling_weight': PiecewiseStepFunction(
-                    thresholds=[0.6],
-                    values=[0.01, 0.0]
-                ),
-                'buffer': 0.225,
-            }
-        ),
-        ConnectionsPotential(
-            parameters={
-                'guidance_interval': 1,
-                'guidance_weight': 0.15,
-                'resampling_weight': 1.0,
-                'buffer': 2.0,
-            }
-        ),
-        PoseBustersPotential(
-            parameters={
-                'guidance_interval': 1,
-                'guidance_weight': 0.05,
-                'resampling_weight': 0.1,
-                'bond_buffer': 0.20,
-                'angle_buffer': 0.20,
-                'clash_buffer': 0.15
-            }
-        ),
-        ChiralAtomPotential(
-            parameters={
-                'guidance_interval': 1,
-                'guidance_weight': 0.10,
-                'resampling_weight': 1.0,
-                'buffer': 0.52360
-            }
-        ),
-        StereoBondPotential(
-            parameters={
-                'guidance_interval': 1,
-                'guidance_weight': 0.05,
-                'resampling_weight': 1.0,
-                'buffer': 0.52360
-            }
-        ),
-        PlanarBondPotential(
-            parameters={
-                'guidance_interval': 1,
-                'guidance_weight': 0.05,
-                'resampling_weight': 1.0,
-                'buffer': 0.26180
+                'resampling_weight': 0.01,
             }
         )
     ]

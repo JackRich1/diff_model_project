@@ -24,6 +24,7 @@ from boltz.model.loss.validation import (
     factored_token_lddt_dist_loss,
     weighted_minimum_rmsd,
 )
+from boltz.model.loss.amber import compute_bonded_energy_decomp
 from boltz.model.modules.confidence import ConfidenceModule
 from boltz.model.modules.diffusion import AtomDiffusion
 from boltz.model.modules.encoders import RelativePositionEncoder
@@ -1164,6 +1165,7 @@ class Boltz1(LightningModule):
                 pred_dict["pae"] = out["pae"]
             if self.predict_args.get("write_full_pde", False):
                 pred_dict["pde"] = out["pde"]
+            pred_dict["energy"] = compute_bonded_energy_decomp(out["sample_atom_coords"], batch)
             return pred_dict
 
         except RuntimeError as e:  # catch out of memory exceptions

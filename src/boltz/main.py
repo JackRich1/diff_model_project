@@ -71,7 +71,7 @@ class BoltzDiffusionParams:
     """Diffusion process parameters."""
 
     gamma_0: float = 0.605
-    gamma_min: float = 1.107
+    gamma_min: float = 0.0
     noise_scale: float = 0.901
     rho: float = 8
     step_scale: float = 1.638
@@ -91,11 +91,11 @@ class BoltzSteeringParams:
     """Steering parameters."""
 
     fk_steering: bool = True
-    num_particles: int = 3
-    fk_lambda: float = 4.0
-    fk_resampling_interval: int = 3
+    num_particles: int = 5
+    fk_lambda: float = 2.0
+    fk_resampling_interval: int = 1
     guidance_update: bool = True
-    num_gd_steps: int = 16
+    num_gd_steps: int = 20
 
 
 @rank_zero_only
@@ -303,6 +303,7 @@ def process_inputs(  # noqa: C901, PLR0912, PLR0915
     msa_pairing_strategy: str,
     max_msa_seqs: int = 4096,
     use_msa_server: bool = False,
+    prmtop_dir: Optional[Path] = None
 ) -> None:
     """Process the input data and output directory.
 
@@ -383,7 +384,7 @@ def process_inputs(  # noqa: C901, PLR0912, PLR0915
             if path.suffix in (".fa", ".fas", ".fasta"):
                 target = parse_fasta(path, ccd)
             elif path.suffix in (".yml", ".yaml"):
-                target = parse_yaml(path, ccd)
+                target = parse_yaml(path, ccd, prmtop_dir=prmtop_dir)
             elif path.is_dir():
                 msg = f"Found directory {path} instead of .fasta or .yaml, skipping."
                 raise RuntimeError(msg)
@@ -604,6 +605,12 @@ def cli() -> None:
     is_flag=True,
     help="Whether to not use potentials for steering. Default is False.",
 )
+@click.option(
+    "--prmtop_dir",
+    type=click.Path(exists=True),
+    default=None,
+    help="The directory of prmtop paths",
+)
 def predict(
     data: str,
     out_dir: str,
@@ -625,6 +632,7 @@ def predict(
     msa_server_url: str = "https://api.colabfold.com",
     msa_pairing_strategy: str = "greedy",
     no_potentials: bool = False,
+    prmtop_dir: Optional[Path] = None,
 ) -> None:
     """Run predictions with Boltz-1."""
     # If cpu, write a friendly warning
@@ -687,6 +695,7 @@ def predict(
         use_msa_server=use_msa_server,
         msa_server_url=msa_server_url,
         msa_pairing_strategy=msa_pairing_strategy,
+        prmtop_dir=prmtop_dir,
     )
 
     # Load processed data
@@ -759,6 +768,7 @@ def predict(
         accelerator=accelerator,
         devices=devices,
         precision=32,
+        logger=False
     )
 
     # Compute predictions
