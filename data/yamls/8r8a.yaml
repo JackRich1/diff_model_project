@@ -1,0 +1,23 @@
+constraints: []
+sequences:
+- protein:
+    id: '0'
+    msa: /data/scratch/getzn/diffusion_class_final_project/data/msas/8r8c_a.a3m
+    sequence: GAMVSRSTHLVGQDGLCLDVIGGYSDNHVPTQLWPCGPQNNQLWTIQADGTIRTMGKCLVPNGHDPGSYTMIDDCNKADPNDKTWKLYPDGTLTHVRSSLVLTSQGTGAYAITTIETNTSAPTQSWGTAD
+- ligand:
+    ccd:
+    - CD
+    id: '1'
+- ligand:
+    ccd:
+    - CD
+    id: '2'
+- ligand:
+    ccd:
+    - CD
+    id: '3'
+- ligand:
+    ccd:
+    - NDG
+    - GAL
+    id: '4'

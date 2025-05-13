@@ -1005,6 +1005,9 @@ def process_residue_constraint_features(
         planar_bond_constraints = residue_constraints.planar_bond_constraints
         planar_ring_5_constraints = residue_constraints.planar_ring_5_constraints
         planar_ring_6_constraints = residue_constraints.planar_ring_6_constraints
+        amber_bond_constraints = residue_constraints.amber_bond_constraints
+        amber_angle_constraints = residue_constraints.amber_angle_constraints
+        amber_torsion_constraints = residue_constraints.amber_torsion_constraints
 
         rdkit_bounds_index = torch.tensor(
             rdkit_bounds_constraints["atom_idxs"].copy(), dtype=torch.long
@@ -1051,6 +1054,39 @@ def process_residue_constraint_features(
         planar_ring_6_index = torch.tensor(
             planar_ring_6_constraints["atom_idxs"].copy(), dtype=torch.long
         ).T
+
+        amber_bond_index = torch.tensor(
+            amber_bond_constraints["atom_idxs"].copy(), dtype=torch.long
+        ).T
+        amber_bond_k = torch.tensor(
+            amber_bond_constraints["k"].copy(), dtype=torch.float32
+        )
+        amber_bond_r_eq = torch.tensor(
+            amber_bond_constraints["r_eq"].copy(), dtype=torch.float32
+        )
+
+        amber_angle_index = torch.tensor(
+            amber_angle_constraints["atom_idxs"].copy(), dtype=torch.long
+        ).T
+        amber_angle_k = torch.tensor(
+            amber_angle_constraints["k"].copy(), dtype=torch.float32
+        )
+        amber_angle_theta_eq = torch.tensor(
+            amber_angle_constraints["theta_eq"].copy(), dtype=torch.float32
+        )
+
+        amber_torsion_index = torch.tensor(
+            amber_torsion_constraints["atom_idxs"].copy(), dtype=torch.long
+        ).T
+        amber_torsion_k = torch.tensor(
+            amber_torsion_constraints["k"].copy(), dtype=torch.float32
+        )
+        amber_torsion_n = torch.tensor(
+            amber_torsion_constraints["n"].copy(), dtype=torch.float32
+        )
+        amber_torsion_phi = torch.tensor(
+            amber_torsion_constraints["phi"].copy(), dtype=torch.float32
+        )
     else:
         rdkit_bounds_index = torch.empty((2, 0), dtype=torch.long)
         rdkit_bounds_bond_mask = torch.empty((0,), dtype=torch.bool)
@@ -1072,6 +1108,16 @@ def process_residue_constraint_features(
         planar_bond_index = torch.empty((6, 0), dtype=torch.long)
         planar_ring_5_index = torch.empty((5, 0), dtype=torch.long)
         planar_ring_6_index = torch.empty((6, 0), dtype=torch.long)
+        amber_bond_index = torch.empty((2, 0), dtype=torch.long)
+        amber_bond_k = torch.empty((0,), dtype=torch.float32)
+        amber_bond_r_eq = torch.empty((0,), dtype=torch.float32)
+        amber_angle_index = torch.empty((3, 0), dtype=torch.long)
+        amber_angle_k = torch.empty((0,), dtype=torch.float32)
+        amber_angle_theta_eq = torch.empty((0,), dtype=torch.float32)
+        amber_torsion_index = torch.empty((4, 0), dtype=torch.long)
+        amber_torsion_k = torch.empty((0,), dtype=torch.float32)
+        amber_torsion_n = torch.empty((0,), dtype=torch.float32)
+        amber_torsion_phi = torch.empty((0,), dtype=torch.float32)
 
     return {
         "rdkit_bounds_index": rdkit_bounds_index,
@@ -1088,6 +1134,16 @@ def process_residue_constraint_features(
         "planar_bond_index": planar_bond_index,
         "planar_ring_5_index": planar_ring_5_index,
         "planar_ring_6_index": planar_ring_6_index,
+        "amber_bond_index": amber_bond_index,
+        "amber_bond_k": amber_bond_k,
+        "amber_bond_r_eq": amber_bond_r_eq,
+        "amber_angle_index": amber_angle_index,
+        "amber_angle_k": amber_angle_k,
+        "amber_angle_theta_eq": amber_angle_theta_eq,
+        "amber_torsion_index": amber_torsion_index,
+        "amber_torsion_k": amber_torsion_k,
+        "amber_torsion_n": amber_torsion_n,
+        "amber_torsion_phi": amber_torsion_phi,
     }
 
 

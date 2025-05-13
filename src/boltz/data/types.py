@@ -421,6 +421,23 @@ PlanarRing6Constraint = [
     ("atom_idxs", np.dtype("6i4")),
 ]
 
+AmberBondConstraint = [
+    ("atom_idxs", np.dtype("2i4")),
+    ("k", np.dtype("f4")),
+    ("r_eq", np.dtype("f4")),
+]
+AmberAngleConstraint = [
+    ("atom_idxs", np.dtype("3i4")),
+    ("k", np.dtype("f4")),
+    ("theta_eq", np.dtype("f4")),
+]
+AmberTorsionConstraint = [
+    ("atom_idxs", np.dtype("4i4")),
+    ("k", np.dtype("f4")),
+    ("n", np.dtype("i4")),
+    ("phi", np.dtype("f4")),
+]
+
 
 @dataclass(frozen=True)
 class ResidueConstraints(NumpySerializable):
@@ -432,6 +449,9 @@ class ResidueConstraints(NumpySerializable):
     planar_bond_constraints: np.ndarray
     planar_ring_5_constraints: np.ndarray
     planar_ring_6_constraints: np.ndarray
+    amber_bond_constraints: np.ndarray
+    amber_angle_constraints: np.ndarray
+    amber_torsion_constraints: np.ndarray
 
 
 ####################################################################################################

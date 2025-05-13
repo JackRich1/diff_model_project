@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Optional
+from pathlib import Path
 
 import click
 import numpy as np
@@ -9,6 +10,7 @@ from rdkit.Chem import AllChem, HybridizationType
 from rdkit.Chem.rdchem import BondStereo, Conformer, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
 from rdkit.Chem.rdMolDescriptors import CalcNumHeavyAtoms
+import parmed as pmd
 
 from boltz.data import const
 from boltz.data.types import (
@@ -24,6 +26,9 @@ from boltz.data.types import (
     PlanarRing5Constraint,
     PlanarRing6Constraint,
     RDKitBoundsConstraint,
+    AmberBondConstraint,
+    AmberAngleConstraint,
+    AmberTorsionConstraint,
     Record,
     Residue,
     ResidueConstraints,
@@ -109,6 +114,30 @@ class ParsedPlanarRing6Constraint:
 
     atom_idxs: tuple[int, int, int, int, int, int]
 
+@dataclass(frozen=True)
+class ParsedAmberBondConstraint:
+    """A parsed planar bond constraint object."""
+
+    atom_idxs: tuple[int, int]
+    k: float
+    r_eq: float
+
+@dataclass(frozen=True)
+class ParsedAmberAngleConstraint:
+    """A parsed planar bond constraint object."""
+
+    atom_idxs: tuple[int, int, int]
+    k: float
+    theta_eq: float
+
+@dataclass(frozen=True)
+class ParsedAmberTorsionConstraint:
+    """A parsed planar bond constraint object."""
+
+    atom_idxs: tuple[int, int, int, int]
+    k: float
+    n: int
+    phi: float
 
 @dataclass(frozen=True)
 class ParsedResidue:
@@ -130,7 +159,9 @@ class ParsedResidue:
     planar_bond_constraints: Optional[list[ParsedPlanarBondConstraint]] = None
     planar_ring_5_constraints: Optional[list[ParsedPlanarRing5Constraint]] = None
     planar_ring_6_constraints: Optional[list[ParsedPlanarRing6Constraint]] = None
-
+    amber_bond_constraints: Optional[list[ParsedAmberBondConstraint]] = None
+    amber_angle_constraints: Optional[list[ParsedAmberAngleConstraint]] = None
+    amber_torsion_constraints: Optional[list[ParsedAmberTorsionConstraint]] = None
 
 @dataclass(frozen=True)
 class ParsedChain:
@@ -442,6 +473,34 @@ def compute_flatness_constraints(mol, idx_map):
     )
 
 
+def compute_amber_constraints(pmd_struct, idx_map):
+    amber_bond_constraints, amber_angle_constraints, amber_torsion_constraints = [], [], []
+    for bond in pmd_struct.bonds:
+        if all(atom.idx in idx_map for atom in (bond.atom1, bond.atom2)):
+            amber_bond_constraints.append(ParsedAmberBondConstraint(
+                atom_idxs=(idx_map[bond.atom1.idx], idx_map[bond.atom2.idx]),
+                k=bond.type.k,
+                r_eq=bond.type.req
+            ))
+    for angle in pmd_struct.angles:
+        if all(atom.idx in idx_map for atom in (angle.atom1, angle.atom2, angle.atom3)):
+            amber_angle_constraints.append(ParsedAmberAngleConstraint(
+                atom_idxs=(idx_map[angle.atom1.idx], idx_map[angle.atom2.idx], idx_map[angle.atom3.idx]),
+                k=angle.type.k,
+                theta_eq=angle.type.theteq
+            ))
+    for torsion in pmd_struct.dihedrals:
+        if all(atom.idx in idx_map for atom in (torsion.atom1, torsion.atom2, torsion.atom3, torsion.atom4)):
+            amber_torsion_constraints.append(ParsedAmberTorsionConstraint(
+                atom_idxs=(idx_map[torsion.atom1.idx], idx_map[torsion.atom2.idx], idx_map[torsion.atom3.idx], idx_map[torsion.atom4.idx]),
+                k=torsion.type.phi_k,
+                n=torsion.type.per,
+                phi=torsion.type.phase
+            ))
+    return amber_bond_constraints, amber_angle_constraints, amber_torsion_constraints
+        
+
+
 ####################################################################################################
 # PARSING
 ####################################################################################################
@@ -451,7 +510,8 @@ def parse_ccd_residue(
     name: str,
     ref_mol: Mol,
     res_idx: int,
-    remove_oxt_atom: bool = False
+    remove_oxt_atom: bool = False,
+    prmtop_dir: Optional[Path] = None
 ) -> Optional[ParsedResidue]:
     """Parse an MMCIF ligand.
 
@@ -580,6 +640,13 @@ def parse_ccd_residue(
     planar_bond_constraints, planar_ring_5_constraints, planar_ring_6_constraints = (
         compute_flatness_constraints(ref_mol, idx_map)
     )
+    if prmtop_dir is not None:
+        pmd_struct = pmd.load_file(str(Path(prmtop_dir) / f'{name}.prmtop'))
+        amber_bond_constraints, amber_angle_constraints, amber_torsion_constraints = (
+            compute_amber_constraints(pmd_struct, idx_map)
+        )
+    else:
+        amber_bond_constraints, amber_angle_constraints, amber_torsion_constraints = [], [], []
 
     unk_prot_id = const.unk_token_ids["PROTEIN"]
     return ParsedResidue(
@@ -599,6 +666,9 @@ def parse_ccd_residue(
         planar_bond_constraints=planar_bond_constraints,
         planar_ring_5_constraints=planar_ring_5_constraints,
         planar_ring_6_constraints=planar_ring_6_constraints,
+        amber_bond_constraints=amber_bond_constraints,
+        amber_angle_constraints=amber_angle_constraints,
+        amber_torsion_constraints=amber_torsion_constraints
     )
 
 
@@ -734,6 +804,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     name: str,
     schema: dict,
     ccd: Mapping[str, Mol],
+    prmtop_dir: Optional[Path]=None,
 ) -> Target:
     """Parse a Boltz input yaml / json.
 
@@ -912,6 +983,7 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                     name=code,
                     ref_mol=ccd[code],
                     res_idx=res_idx,
+                    prmtop_dir=prmtop_dir
                 )
                 residues.append(residue)
 
@@ -998,6 +1070,9 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     planar_bond_constraint_data = []
     planar_ring_5_constraint_data = []
     planar_ring_6_constraint_data = []
+    amber_bond_constraint_data = []
+    amber_angle_constraint_data = []
+    amber_torsion_constraint_data = []
 
     # Convert parsed chains to tables
     atom_idx = 0
@@ -1120,7 +1195,43 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
                             ),
                         )
                     )
-
+            if res.amber_bond_constraints is not None:
+                for constraint in res.amber_bond_constraints:
+                    amber_bond_constraint_data.append(
+                        (
+                            tuple(
+                                c_atom_idx + atom_idx
+                                for c_atom_idx in constraint.atom_idxs
+                            ),
+                            constraint.k,
+                            constraint.r_eq
+                        )
+                    )
+            if res.amber_angle_constraints is not None:
+                for constraint in res.amber_angle_constraints:
+                    amber_angle_constraint_data.append(
+                        (
+                            tuple(
+                                c_atom_idx + atom_idx
+                                for c_atom_idx in constraint.atom_idxs
+                            ),
+                            constraint.k,
+                            constraint.theta_eq
+                        )
+                    )
+            if res.amber_torsion_constraints is not None:
+                for constraint in res.amber_torsion_constraints:
+                    amber_torsion_constraint_data.append(
+                        (
+                            tuple(
+                                c_atom_idx + atom_idx
+                                for c_atom_idx in constraint.atom_idxs
+                            ),
+                            constraint.k,
+                            constraint.n,
+                            constraint.phi
+                        )
+                    )
             for bond in res.bonds:
                 atom_1 = atom_idx + bond.atom_1
                 atom_2 = atom_idx + bond.atom_2
@@ -1227,7 +1338,15 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
     planar_ring_6_constraints = np.array(
         planar_ring_6_constraint_data, dtype=PlanarRing6Constraint
     )
-
+    amber_bond_constraints = np.array(
+        amber_bond_constraint_data, dtype=AmberBondConstraint
+    )
+    amber_angle_constraints = np.array(
+        amber_angle_constraint_data, dtype=AmberAngleConstraint
+    )
+    amber_torsion_constraints = np.array(
+        amber_torsion_constraint_data, dtype=AmberTorsionConstraint
+    )
     data = Structure(
         atoms=atoms,
         bonds=bonds,
@@ -1271,6 +1390,9 @@ def parse_boltz_schema(  # noqa: C901, PLR0915, PLR0912
         planar_bond_constraints=planar_bond_constraints,
         planar_ring_5_constraints=planar_ring_5_constraints,
         planar_ring_6_constraints=planar_ring_6_constraints,
+        amber_bond_constraints=amber_bond_constraints,
+        amber_angle_constraints=amber_angle_constraints,
+        amber_torsion_constraints=amber_torsion_constraints
     )
 
     return Target(

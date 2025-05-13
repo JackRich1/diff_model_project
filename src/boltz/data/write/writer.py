@@ -222,7 +222,21 @@ class BoltzWriter(BasePredictionWriter):
                         / f"pde_{record.id}_model_{idx_to_rank[model_idx]}.npz"
                     )
                     np.savez_compressed(path, pde=pde.cpu().numpy())
-
+                
+                # Save ligand bonded energy
+                if 'energy' in prediction:
+                    energy_dict = {key: val[model_idx].item() for key, val in prediction['energy'].items()}
+                    path = (
+                        struct_dir
+                        / f"energy_{record.id}_model_{idx_to_rank[model_idx]}.json"
+                    )
+                    with path.open("w") as f:
+                        f.write(
+                            json.dumps(
+                                energy_dict,
+                                indent=4,
+                            )
+                        )
     def on_predict_epoch_end(
         self,
         trainer: Trainer,  # noqa: ARG002
